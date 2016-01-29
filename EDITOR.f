@@ -1,14 +1,41 @@
 DECIMAL
 
-\ EDITOR functions
+\ The EDITOR uses a basic data structure whereby each line of text from the file being edited is stored in a separate
+\ "line" datastructure.  Each line datastruture is actually a node in a double-linked list followed by data fields
 
-\ line data structure
-\ 00 FWD reference
-\ 04 BCK reference
-\ 08 length of line (excluding line endings, -1 for list headers)
-\ 12 line number (starting at 1)
-\ 16 text (256 bytes reserved)
+\ The FORTH words for manipulating the doubly linked list (e.g. LIST.fwd) are defined in the N.I.G.E. Machine file SYSTEM.F
+\ List structure:	circular, double-linked list
+\ Node structure:	12 bytes organized as:
+\			Forward link reference
+\			Backward link reference
+\			List pointers always point to the list node's byte zero
+\ Header structure:	24 bytes long, comprising two adjacent nodes that (initially) circular reference each other
+\ FORTH words:	as follows
+\			LIST.fwd ( n -- n, given a list node reference return the next forward list node)
+\			LIST.bck ( n -- n, given a list node reference return the next back list node)
+\			LIST.val ( n -- x, given a list node reference return address of the value field)
+\			LIST.rem ( n --, given a list node remove it from the list)
+\			LIST.ins ( m n --, insert list node m in front of list node n)
+\			LIST.init ( addr --, initialize a 24 byte circular list header at addr)
 
+\ The EDITOR's line datastructure is as follows
+\ Byte-offset 	Field-description
+\ 00 			FWD reference (within linked-list node)
+\ 04 			BCK reference (within linked-list node)
+\ 08 			length of line (excluding line endings, -1 for list headers)
+\ 12 			line number within the text file (starting at 1)
+\ 16 			text (256 bytes reserved)
+
+\ The EDITOR operation is an endless loop.  In each cycle if a key-press is detected then
+\ a FORTH word is called to update the line datastruture according to which key was pressed
+\ (e.g. BACKSPACE will delete a character, ENTER will split a line)
+\ depending on the result of the datestruture update EDITOR will decide the scope of the required screen refresh
+\ (e.g. retype the current line, or retype the current line and all subsequent lines, etc.)
+\ In each case the appropriate undrawing and redrawing of the cursor is also actioned
+\ The EDITOR sets up its own screenbuffer as an editing window.  The screenbuffer is larger in size than one display screen
+\ This enables fast scrolling by simply redesignating the start address of the displaybuffer that is passed to the VGA controller
+
+\ FORTH words for extracting the parameters of a line
 : ED.linelen
 	8 + 
 ;
@@ -21,6 +48,7 @@ DECIMAL
 	16 +
 ;
 
+\ FORTH global variables
 24 buffer: ED.filehead		\ list header for the file being edited
 variable ED.fileid			\ FORTH file access fileid for the file being edited
 variable ED.cursorline		\ pointer to the list node where the cursor is currently
@@ -335,6 +363,7 @@ constant ED.SCREENBASE
 	ED.backspace
 ;
 
+\ Provide the address of the cursor within the buffer
 : ED.cursoraddr ( -- addr, the address of the cursor within the buffer)
 	ed.cursorline @ 0 over ED.linetxt				( line col start)
 	ED.cursorcol @ over + swap					( line col finish start)
@@ -373,6 +402,7 @@ constant ED.SCREENBASE
 	1+ 1+
 ;
  
+ \ redraw a line data-structure as a given screenbuffer address
  : ED.refresh ( line address --)
 	swap 0 							( dest line col) 			\ start at column 0
 	over ED.linetxt						( dest line col src)
@@ -403,7 +433,7 @@ constant ED.SCREENBASE
 	drop drop							( --)
 ;
  	
- \ refresh the buffer using the currently set refresh parameters
+ \ refresh the screenbuffer using the currently set refresh parameters
 : ED.refreshbuffer ( --)
 	ED.refreshcount @ ?dup
 	IF
